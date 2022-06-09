@@ -149,7 +149,7 @@ def _initialize_weights(inputs, logfile, device, elem_list):
     logfile.write(f"{device} is used in model.\n")
 
     init_weights = {}
-    for idx, element in enumerate(elem_list):
+    for element in elem_list:
         hidden_layer_nodes = [int(nodes) for nodes in inputs['neural_network']['nodes'].split('-')]
 
         # change if calculating input_nodes method is changed
@@ -164,13 +164,6 @@ def _initialize_weights(inputs, logfile, device, elem_list):
         weights_initialize_log = weight_initializers._initialize_weights(inputs, logfile, model)
         model.to(device)
         init_weights[element] = model.state_dict()
-        if idx == 0:
-            comm_w = init_weights[element]
-        else:
-            init_weights[element]['lin.lin_1.weight'] = comm_w['lin.lin_1.weight']
-            init_weights[element]['lin.lin_2.weight'] = comm_w['lin.lin_2.weight']
-            init_weights[element]['lin.lin_1.bias'] = comm_w['lin.lin_1.bias']
-            init_weights[element]['lin.lin_2.bias'] = comm_w['lin.lin_2.bias']
 
     return init_weights
 
