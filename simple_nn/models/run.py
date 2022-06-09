@@ -87,7 +87,8 @@ def train(inputs, logfile):
         # Update initial weights
         for el in atom_types:
             for idx, key in enumerate(init_weights[el].keys()):
-                init_weights[el][key] -= inputs['neural_network']['outer_lr'] * elem_weights[el] * loss_grads_sum[el][idx] 
+                #init_weights[el][key] -= inputs['neural_network']['outer_lr'] * elem_weights[el] * loss_grads_sum[el][idx] 
+                init_weights[el][key] -= inputs['neural_network']['outer_lr'] * loss_grads_sum[el][idx] 
 
         outer_loss = np.mean(outer_loss_batch)
         rmse_support_init = np.mean(rmse_support_batch_init)
@@ -206,6 +207,9 @@ def write_lammps_potential(filename, inputs, elem, net):
 def inner_loop(inputs, logfile, task, atom_types, init_weights, device, cal_grads=True):
     support, query = task
     model = neural_network._initialize_model(inputs, init_weights, logfile, device, atom_types)
+    #optimizer1 = optimizers._initialize_optimizer(inputs, model, [0, 1])
+    #optimizer2 = optimizers._initialize_optimizer(inputs, model, [2, 3, 4, 5])
+    #optimizer = [optimizer1, optimizer2]
     optimizer = optimizers._initialize_optimizer(inputs, model)
     criterion = torch.nn.MSELoss(reduction='none').to(device=device)
 
@@ -336,10 +340,11 @@ class DataGenerator(torch.utils.data.Dataset):
     def support_query_generate(self):
         n_support = self.n_support
         n_query = self.n_query
-
         tmp_data = torch.load(self.filename)
-        n_support = int(len(tmp_data)*0.9)
-        n_query = len(tmp_data) - n_support
+        if len(tmp_data) < n_support + n_query:
+            n_support = int(len(tmp_data)*0.9)
+            n_query = len(tmp_data) - n_support
+
         shots = np.random.choice(tmp_data, n_support+n_query, replace=False)
         support = shots[:n_support]
         query = shots[n_support:]

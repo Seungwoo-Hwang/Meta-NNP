@@ -1,6 +1,7 @@
 import torch.optim
 
 def _initialize_optimizer(inputs, model, user=None):
+#def _initialize_optimizer(inputs, model, idx, user=None):
     optim_type  = inputs['neural_network']['optimizer']['method']
     optim_params =inputs['neural_network']['optimizer']['params'] if inputs['neural_network']['optimizer']['params'] else {}
     lr=inputs['neural_network']['learning_rate']
@@ -41,3 +42,9 @@ def _initialize_optimizer(inputs, model, user=None):
         'user'      : optim_params,
     }
     return optimizer[optim_type](model.parameters(), **kwarg[optim_type])
+    #optim_params = []
+    #model_params = list(model.parameters())
+    #for i in range(3):
+    #    for j in idx:
+    #        optim_params.append(model_params[6*i+j])
+    #return optimizer[optim_type](optim_params, **kwarg[optim_type])
