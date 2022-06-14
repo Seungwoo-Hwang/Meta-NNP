@@ -155,7 +155,7 @@ def _initialize_weights(inputs, logfile, device, elem_list):
         # change if calculating input_nodes method is changed
         with open(inputs['params'], 'r') as f:
             tmp_symf = f.readlines()
-            input_nodes = len(tmp_symf)
+            input_nodes = len(tmp_symf) + inputs['neural_network']['sys_vector_size']
 
         model = FCN(input_nodes, hidden_layer_nodes,\
             acti_func=inputs['neural_network']['acti_func'],
@@ -177,7 +177,7 @@ def _initialize_model(inputs, init_weights, logfile, device, atom_types):
         # change if calculating input_nodes method is changed
         with open(inputs['params'], 'r') as f:
             tmp_symf = f.readlines()
-            input_nodes = len(tmp_symf)
+            input_nodes = len(tmp_symf) + + inputs['neural_network']['sys_vector_size']
 
         model[element] = FCN(input_nodes, hidden_layer_nodes,\
             acti_func=inputs['neural_network']['acti_func'],
