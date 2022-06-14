@@ -39,6 +39,9 @@ def train(inputs, logfile):
     if inputs['neural_network']['double_precision']:
         torch.set_default_dtype(torch.float64)
     device = _get_torch_device(inputs)
+    
+    # Keep a dictionary of 'task' vector (i.e. system vector)
+    task_vector_dict = dict()
 
     # Initialize weights of each elements
     init_weights = neural_network._initialize_weights(inputs, logfile, device, elem_list)
@@ -53,6 +56,12 @@ def train(inputs, logfile):
         train_files, train_tasks = train_task_generator.generate_task(\
                 inputs['neural_network']['num_support'], inputs['neural_network']['num_query'], device)
         load_time = time.time() - load_start_time
+        
+        # If task is new, create a new task vector and add it to the dict; else, do nothing
+        for train_file in train_files:
+            if train_file not in task_vector_dict:
+                task_vector = torch.randn(inputs['neural_network']['sys_vector_size']).cuda()
+                task_vector_dict[train_file] = task_vector
 
         # Outer loop start
         outer_loss_batch = []
@@ -64,13 +73,19 @@ def train(inputs, logfile):
             loss_grads_sum[el] = None
 
         start_time = time.time()
-        for task_idx, task in enumerate(train_tasks):
+        
+        # Loop with train_files to identify the type of task (to get task vector)
+        for task_idx, task, train_file in enumerate(zip(train_tasks, train_files)):
             support, query = task
+            
+            # Get task vector
+            task_vector = task_vector_dict[train_file]
+            
             atom_types = list(support[0].keys())
             atom_types.pop(atom_types.index('E'))
 
             # Run inner loop
-            train_rmse_list, valid_loss, valid_rmse, val_loss_grads = inner_loop(inputs, logfile, task, atom_types, init_weights, device, cal_grads=True)
+            train_rmse_list, valid_loss, valid_rmse, val_loss_grads = inner_loop(inputs, logfile, task, atom_types, init_weights, device, task_vector, cal_grads=True)
             rmse_support_batch_init.append(train_rmse_list[0])
             rmse_support_batch.append(train_rmse_list[-1])
             rmse_query_batch.append(valid_rmse)
@@ -221,14 +236,23 @@ def inner_loop(inputs, logfile, task, atom_types, init_weights, device, cal_grad
         num_workers=inputs['neural_network']['subprocesses'], pin_memory=False)
 
     # Train using support set
+    # When training, freeze model params and only train the task vector
+    for param in model.parameters():
+        param.requires_grad_(False)
+    task_vector.requires_grad_(True)
+    
     train_rmse_list, train_loss_list = train_model(inputs, atom_types, logfile, \
-            model, optimizer, criterion, None, None, device, float('inf'), support_dataloader)
+            model, optimizer, criterion, None, None, device, task_vector, float('inf'), support_dataloader)
 
     # Valid using query set
+    # Set the requires_grad for model back to True, so we can collect meta grads
+    for param in model.parameters():
+        param.requires_grad_(True)
+        
     struct_labels = ['None']
     dtype = torch.get_default_dtype()
     non_block = False if (device == torch.device('cpu')) else True
-    valid_epoch_result, valid_batch_loss = progress_epoch(inputs, atom_types, query_dataloader, struct_labels, model, optimizer, criterion, dtype, device, non_block, valid=True, atomic_e=False)
+    valid_epoch_result, valid_batch_loss = progress_epoch(inputs, atom_types, query_dataloader, struct_labels, model, optimizer, criterion, dtype, device, non_block, task_vector, valid=True, atomic_e=False)
     valid_loss = valid_epoch_result['losses'].avg
     v_sum   = valid_epoch_result['e_err']['None'].sum
     v_count = valid_epoch_result['e_err']['None'].count
@@ -246,7 +270,7 @@ def inner_loop(inputs, logfile, task, atom_types, init_weights, device, cal_grad
 
     return train_rmse_list, valid_loss, valid_rmse, val_loss_grads
 
-def train_model(inputs, atom_types, logfile, model, optimizer, criterion, scale_factor, pca, device, best_loss, train_loader, atomic_e=False):
+def train_model(inputs, atom_types, logfile, model, optimizer, criterion, scale_factor, pca, device, task_vector, best_loss, train_loader, atomic_e=False):
     struct_labels = ['None']
     dtype = torch.get_default_dtype()
     non_block = False if (device == torch.device('cpu')) else True
@@ -266,8 +290,8 @@ def train_model(inputs, atom_types, logfile, model, optimizer, criterion, scale_
     start_time = time.time()
     for epoch in tqdm(range(0, total_epoch+1), unit='epoch'):
         if epoch > 0:
-            train_epoch_result, train_batch_loss = progress_epoch(inputs, atom_types, train_loader, struct_labels, model, optimizer, criterion, dtype, device, non_block, valid=False, atomic_e=atomic_e)
-        train_epoch_result, train_batch_loss = progress_epoch(inputs, atom_types, train_loader, struct_labels, model, optimizer, criterion, dtype, device, non_block, valid=True, atomic_e=atomic_e)
+            train_epoch_result, train_batch_loss = progress_epoch(inputs, atom_types, train_loader, struct_labels, model, optimizer, criterion, dtype, device, non_block, task_vector, valid=False, atomic_e=atomic_e)
+        train_epoch_result, train_batch_loss = progress_epoch(inputs, atom_types, train_loader, struct_labels, model, optimizer, criterion, dtype, device, non_block, task_vector, valid=True, atomic_e=atomic_e)
         train_loss = train_epoch_result['losses'].avg
         t_sum   = train_epoch_result['e_err']['None'].sum
         t_count = train_epoch_result['e_err']['None'].count
@@ -284,7 +308,7 @@ def train_model(inputs, atom_types, logfile, model, optimizer, criterion, scale_
     return train_rmse_list, train_loss_list
 
 # Main loop for calculations 
-def progress_epoch(inputs, atom_types, data_loader, struct_labels, model, optimizer, criterion, dtype, device, non_block, valid=False, atomic_e=False):
+def progress_epoch(inputs, atom_types, data_loader, struct_labels, model, optimizer, criterion, dtype, device, non_block, task_vector, valid=False, atomic_e=False):
     use_force = False
     use_stress = False
     weighted = False
