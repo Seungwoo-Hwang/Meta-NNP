@@ -338,8 +338,9 @@ class DataGenerator(torch.utils.data.Dataset):
         n_query = self.n_query
 
         tmp_data = torch.load(self.filename)
-        n_support = int(len(tmp_data)*0.9)
-        n_query = len(tmp_data) - n_support
+        if n_support + n_query > len(tmp_data):
+            n_support = int(len(tmp_data)*0.9)
+            n_query = len(tmp_data) - n_support
         shots = np.random.choice(tmp_data, n_support+n_query, replace=False)
         support = shots[:n_support]
         query = shots[n_support:]

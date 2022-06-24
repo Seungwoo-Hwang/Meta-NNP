@@ -24,7 +24,8 @@ def calculate_E(atom_types, item, model, device, non_block):
         atomic_E[atype] = None
         if x[atype].size(0) != 0:
             atomic_E[atype] = model.nets[atype](x[atype])
-            E_ += torch.sum(atomic_E[atype], axis=0)
+            atomic_E[atype] = model.nets[atype](x[atype]).reshape(item['n'][atype].size(0), -1)
+            E_ += torch.sum(atomic_E[atype], axis=1)
         n_atoms += item['n'][atype].to(device=device, non_blocking=non_block)
 
     return x, atomic_E, E_, n_atoms
