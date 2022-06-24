@@ -1,0 +1,42 @@
+random_seed:        null
+params: params_file
+data: 
+    type:               'symmetry_function'
+
+# Inputs for train_model
+neural_network:
+    # For MAML
+    num_iter:           1000
+    valid_steps:        50
+    num_task:           5
+    num_support:        300
+    num_query:          100
+    outer_lr:           0.001
+    save_iter:          50
+
+    # Running mode
+    total_epoch:        500
+    learning_rate:      0.0001
+
+    nodes:              '30-30'
+    acti_func:          'sigmoid'
+    optimizer:
+        method:         'Adam'
+    weight_initializer:
+        type:           'xavier normal'
+    l2_regularization:  1.0e-6
+    decay_rate:         null
+
+    batch_size:         20
+    full_batch:         False
+    dropout:            0.0
+    double_precision:   True
+    E_loss_type:        1
+
+    # Parallelism
+    use_gpu:            True
+    GPU_number:         null
+    inter_op_threads:   0
+    intra_op_threads:   0
+    subprocesses:       0 
+    
