@@ -148,22 +148,20 @@ class swish(torch.nn.Module):
 def _initialize_weights(inputs, logfile, device, elem_list):
     logfile.write(f"{device} is used in model.\n")
 
-    init_weights = {}
-    for element in elem_list:
-        hidden_layer_nodes = [int(nodes) for nodes in inputs['neural_network']['nodes'].split('-')]
+    hidden_layer_nodes = [int(nodes) for nodes in inputs['neural_network']['nodes'].split('-')]
 
-        # change if calculating input_nodes method is changed
-        with open(inputs['params'], 'r') as f:
-            tmp_symf = f.readlines()
-            input_nodes = len(tmp_symf) + inputs['neural_network']['sys_vector_size']
+    # change if calculating input_nodes method is changed
+    with open(inputs['params'], 'r') as f:
+        tmp_symf = f.readlines()
+        input_nodes = len(tmp_symf) + inputs['neural_network']['sys_vector_size']
 
-        model = FCN(input_nodes, hidden_layer_nodes,\
-            acti_func=inputs['neural_network']['acti_func'],
-            dropout=inputs['neural_network']['dropout'])
+    model = FCN(input_nodes, hidden_layer_nodes,\
+        acti_func=inputs['neural_network']['acti_func'],
+        dropout=inputs['neural_network']['dropout'])
 
-        weights_initialize_log = weight_initializers._initialize_weights(inputs, logfile, model)
-        model.to(device)
-        init_weights[element] = model.state_dict()
+    weights_initialize_log = weight_initializers._initialize_weights(inputs, logfile, model)
+    model.to(device)
+    init_weights = model.state_dict()
 
     return init_weights
 
@@ -177,13 +175,13 @@ def _initialize_model(inputs, init_weights, logfile, device, atom_types):
         # change if calculating input_nodes method is changed
         with open(inputs['params'], 'r') as f:
             tmp_symf = f.readlines()
-            input_nodes = len(tmp_symf) + + inputs['neural_network']['sys_vector_size']
+            input_nodes = len(tmp_symf) + inputs['neural_network']['sys_vector_size']
 
         model[element] = FCN(input_nodes, hidden_layer_nodes,\
             acti_func=inputs['neural_network']['acti_func'],
             dropout=inputs['neural_network']['dropout'])
 
-        model[element].load_state_dict(init_weights[element])
+        model[element].load_state_dict(init_weights)
         #weights_initialize_log = weight_initializers._initialize_weights(inputs, logfile, model[element])
 
     model = FCNDict(model) #Make full model with elementized dictionary model

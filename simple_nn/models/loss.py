@@ -2,10 +2,10 @@ import torch
 from ase import units
 
 
-def calculate_batch_loss(inputs, atom_types, item, model, criterion, device, non_block, epoch_result, weighted, dtype):
+def calculate_batch_loss(inputs, atom_types, item, model, criterion, device, non_block, epoch_result, weighted, dtype, task_vector, valid):
     n_batch = item['E'].size(0)
     calc_results = dict()
-    x, atomic_E, E_, n_atoms = calculate_E(atom_types, item, model, device, non_block)
+    x, atomic_E, E_, n_atoms = calculate_E(atom_types, item, model, device, non_block, task_vector, valid)
     e_loss = get_e_loss(atom_types, inputs['neural_network']['E_loss_type'], atomic_E, E_, n_atoms, item, criterion,\
                     epoch_result, dtype, device, non_block, n_batch)
     batch_loss = e_loss
@@ -14,17 +14,20 @@ def calculate_batch_loss(inputs, atom_types, item, model, criterion, device, non
 
     return batch_loss, calc_results
 
-def calculate_E(atom_types, item, model, device, non_block):
+def calculate_E(atom_types, item, model, device, non_block, task_vector, valid):
     x = dict()
     atomic_E = dict()
     E_ = 0
     n_atoms = 0
+
     for atype in atom_types:
-        x[atype] = item['x'][atype].to(device=device, non_blocking=non_block).requires_grad_(True)
+        #x[atype] = item['x'][atype].to(device=device, non_blocking=non_block).requires_grad_(True)
+        t_vec = task_vector[atype].repeat(item['x'][atype].shape[0], 1)
+        x[atype] = torch.cat((item['x'][atype], t_vec), 1).to(device=device, non_blocking=non_block).requires_grad_(True)
         atomic_E[atype] = None
         if x[atype].size(0) != 0:
-            atomic_E[atype] = model.nets[atype](x[atype])
-            E_ += torch.sum(atomic_E[atype], axis=0)
+            atomic_E[atype] = model.nets[atype](x[atype]).reshape(item['n'][atype].size(0), -1)
+            E_ += torch.sum(atomic_E[atype], axis=1)
         n_atoms += item['n'][atype].to(device=device, non_blocking=non_block)
 
     return x, atomic_E, E_, n_atoms

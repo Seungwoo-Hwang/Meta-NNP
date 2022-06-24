@@ -1,5 +1,5 @@
 random_seed:        null
-params: params_file
+params: params_ter
 data: 
     type:               'symmetry_function'
 
@@ -9,17 +9,18 @@ neural_network:
     num_iter:           1000
     valid_steps:        50
     num_task:           5
+    sys_vector_size:    20
     num_support:        300
     num_query:          100
-    outer_lr:           0.001
-    save_iter:          50
+    outer_lr:           0.1
+    save_iter: 50
 
     # Running mode
-    total_epoch:        500
-    learning_rate:      0.0001
+    total_epoch:        300
+    learning_rate:      0.01
 
     nodes:              '30-30'
-    acti_func:          'sigmoid'
+    acti_func:          'tanh'
     optimizer:
         method:         'Adam'
     weight_initializer:
@@ -39,4 +40,3 @@ neural_network:
     inter_op_threads:   0
     intra_op_threads:   0
     subprocesses:       0 
-    

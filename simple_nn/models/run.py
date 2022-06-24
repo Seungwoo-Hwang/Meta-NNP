@@ -27,9 +27,6 @@ def train(inputs, logfile):
             els = p.findall(system)
             for e in els:
                 elem_num[e] += 1
-    elem_weights = dict()
-    for e in elem_list:
-        elem_weights[e] = 1/elem_num[e]
 
     valid_pool = []
     with open('valid_pool', 'r') as f:
@@ -40,8 +37,6 @@ def train(inputs, logfile):
         torch.set_default_dtype(torch.float64)
     device = _get_torch_device(inputs)
     
-    # Keep a dictionary of 'task' vector (i.e. system vector)
-    task_vector_dict = dict()
 
     # Initialize weights of each elements
     init_weights = neural_network._initialize_weights(inputs, logfile, device, elem_list)
@@ -56,36 +51,38 @@ def train(inputs, logfile):
         train_files, train_tasks = train_task_generator.generate_task(\
                 inputs['neural_network']['num_support'], inputs['neural_network']['num_query'], device)
         load_time = time.time() - load_start_time
-        
+
+        # Keep a dictionary of 'task' vector (i.e. system vector)
+        task_vector_dict = dict()
         # If task is new, create a new task vector and add it to the dict; else, do nothing
-        for train_file in train_files:
-            if train_file not in task_vector_dict:
-                task_vector = torch.randn(inputs['neural_network']['sys_vector_size']).cuda()
-                task_vector_dict[train_file] = task_vector
+
+        task_vector = dict()
+        for atype in elem_list:
+            task_vector[atype] = torch.randn(inputs['neural_network']['sys_vector_size'])
+            task_vector[atype].requires_grad_(True)
 
         # Outer loop start
         outer_loss_batch = []
         rmse_support_batch_init = []
         rmse_support_batch = []
         rmse_query_batch = []
-        loss_grads_sum = dict()
-        for el in elem_list:
-            loss_grads_sum[el] = None
+        loss_grads_sum = None
 
         start_time = time.time()
-        
+
         # Loop with train_files to identify the type of task (to get task vector)
-        for task_idx, task, train_file in enumerate(zip(train_tasks, train_files)):
+        for task_idx, task in enumerate(train_tasks):
             support, query = task
-            
-            # Get task vector
-            task_vector = task_vector_dict[train_file]
-            
+            train_file = train_files[task_idx]
+
             atom_types = list(support[0].keys())
             atom_types.pop(atom_types.index('E'))
 
             # Run inner loop
-            train_rmse_list, valid_loss, valid_rmse, val_loss_grads = inner_loop(inputs, logfile, task, atom_types, init_weights, device, task_vector, cal_grads=True)
+            try:
+                train_rmse_list, valid_loss, valid_rmse, val_loss_grads = inner_loop(inputs, logfile, task, atom_types, init_weights, device, task_vector, cal_grads=True)
+            except:
+                continue
             rmse_support_batch_init.append(train_rmse_list[0])
             rmse_support_batch.append(train_rmse_list[-1])
             rmse_query_batch.append(valid_rmse)
@@ -93,16 +90,15 @@ def train(inputs, logfile):
 
             # Update valid loss gradient
             for el in atom_types:
-                if loss_grads_sum[el] == None:
-                    loss_grads_sum[el] = val_loss_grads[el]
+                if loss_grads_sum == None:
+                    loss_grads_sum = val_loss_grads[el]
                 else:
-                    for i in range(len(loss_grads_sum[el])):
-                        loss_grads_sum[el][i] += val_loss_grads[el][i]
+                    for i in range(len(loss_grads_sum)):
+                        loss_grads_sum[i] += val_loss_grads[el][i]
 
         # Update initial weights
-        for el in atom_types:
-            for idx, key in enumerate(init_weights[el].keys()):
-                init_weights[el][key] -= inputs['neural_network']['outer_lr'] * elem_weights[el] * loss_grads_sum[el][idx] 
+        for idx, key in enumerate(init_weights.keys()):
+            init_weights[key] -= inputs['neural_network']['outer_lr'] * loss_grads_sum[idx] / inputs['neural_network']['num_task']
 
         outer_loss = np.mean(outer_loss_batch)
         rmse_support_init = np.mean(rmse_support_batch_init)
@@ -137,8 +133,12 @@ def train(inputs, logfile):
                 support, query = task
                 atom_types = list(support[0].keys())
                 atom_types.pop(atom_types.index('E'))
+                task_vector = dict()
+                for atype in atom_types:
+                    task_vector[atype] = torch.randn(inputs['neural_network']['sys_vector_size'])
+                    task_vector[atype].requires_grad_(True)
 
-                train_rmse_list, valid_loss, valid_rmse, val_loss_grads = inner_loop(inputs, logfile, task, atom_types, init_weights, device, cal_grads=False)
+                train_rmse_list, valid_loss, valid_rmse, val_loss_grads = inner_loop(inputs, logfile, task, atom_types, init_weights, device, task_vector, cal_grads=False)
                 rmse_support_batch.append(train_rmse_list[-1])
                 rmse_query_batch.append(valid_rmse)
                 outer_loss_batch.append(valid_loss)
@@ -157,9 +157,8 @@ def train(inputs, logfile):
                 os.mkdir('pot%s'%iter_idx)
             model = neural_network._initialize_model(inputs, init_weights, logfile, device, ['O', 'Li', 'Na'])
             net = model.nets['O']
-            for el in elem_list:
-                net.load_state_dict(init_weights[el])
-                write_lammps_potential('pot%s/potential_saved_%s'%(iter_idx, el), inputs, el, net)
+            net.load_state_dict(init_weights)
+            write_lammps_potential('pot%s/potential_saved'%(iter_idx), inputs, 'O', net)
 
 
     logfile.write(f"Elapsed time in training: {time.time()-start_time:10} s.\n")
@@ -218,10 +217,11 @@ def write_lammps_potential(filename, inputs, elem, net):
     FIL.write('\n')
     FIL.close()
 
-def inner_loop(inputs, logfile, task, atom_types, init_weights, device, cal_grads=True):
+def inner_loop(inputs, logfile, task, atom_types, init_weights, device, task_vector, cal_grads=True):
     support, query = task
     model = neural_network._initialize_model(inputs, init_weights, logfile, device, atom_types)
     optimizer = optimizers._initialize_optimizer(inputs, model)
+    optimizer2 = optimizers._initialize_optimizer2(inputs, task_vector)
     criterion = torch.nn.MSELoss(reduction='none').to(device=device)
 
     # Make dataloader
@@ -239,16 +239,19 @@ def inner_loop(inputs, logfile, task, atom_types, init_weights, device, cal_grad
     # When training, freeze model params and only train the task vector
     for param in model.parameters():
         param.requires_grad_(False)
-    task_vector.requires_grad_(True)
-    
+    for key in task_vector.keys():
+        task_vector[key].requires_grad_(True)
+
     train_rmse_list, train_loss_list = train_model(inputs, atom_types, logfile, \
-            model, optimizer, criterion, None, None, device, task_vector, float('inf'), support_dataloader)
+            model, optimizer2, criterion, None, None, device, task_vector, float('inf'), support_dataloader)
 
     # Valid using query set
     # Set the requires_grad for model back to True, so we can collect meta grads
     for param in model.parameters():
         param.requires_grad_(True)
-        
+    for key in task_vector.keys():
+        task_vector[key].requires_grad_(False)
+
     struct_labels = ['None']
     dtype = torch.get_default_dtype()
     non_block = False if (device == torch.device('cpu')) else True
@@ -261,6 +264,7 @@ def inner_loop(inputs, logfile, task, atom_types, init_weights, device, cal_grad
     # Calculate gradient using valid loss
     optimizer.zero_grad()
     valid_batch_loss.backward()
+    #optimizer.step()
     val_loss_grads = dict()
     if cal_grads == True:
         for el in atom_types:
@@ -314,12 +318,12 @@ def progress_epoch(inputs, atom_types, data_loader, struct_labels, model, optimi
     weighted = False
     back_prop = False if valid else True
     epoch_result = logger._init_meters(struct_labels, use_force, use_stress, atomic_e)
-    model.eval() if valid else model.train()
+    #model.eval() if valid else model.train()
 
     end = time.time()
     for i, item in enumerate(data_loader):
         epoch_result['data_time'].update(time.time() - end) # save data loading time
-        batch_loss, _ = loss.calculate_batch_loss(inputs, atom_types, item, model, criterion, device, non_block, epoch_result, weighted, dtype)
+        batch_loss, _ = loss.calculate_batch_loss(inputs, atom_types, item, model, criterion, device, non_block, epoch_result, weighted, dtype, task_vector, valid)
         if back_prop:
             optimizer.zero_grad()
             batch_loss.backward()
@@ -362,8 +366,9 @@ class DataGenerator(torch.utils.data.Dataset):
         n_query = self.n_query
 
         tmp_data = torch.load(self.filename)
-        n_support = int(len(tmp_data)*0.9)
-        n_query = len(tmp_data) - n_support
+        if n_support + n_query > len(tmp_data):
+            n_support = int(len(tmp_data)*0.9/20)*20
+            n_query = int(len(tmp_data)/20)*20 - n_support
         shots = np.random.choice(tmp_data, n_support+n_query, replace=False)
         support = shots[:n_support]
         query = shots[n_support:]
