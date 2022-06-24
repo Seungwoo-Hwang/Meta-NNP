@@ -1,5 +1,5 @@
 random_seed:        null
-params: params_file
+params: params_ter
 data: 
     type:               'symmetry_function'
 
@@ -8,14 +8,14 @@ neural_network:
     # For MAML
     num_iter:           1000
     valid_steps:        50
-    num_task:           5
+    num_task:           2
     num_support:        300
     num_query:          100
     outer_lr:           0.001
     save_iter:          50
 
     # Running mode
-    total_epoch:        500
+    total_epoch:        100
     learning_rate:      0.0001
 
     nodes:              '30-30'

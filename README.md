@@ -9,6 +9,6 @@ How to run Meta-NNP
 2. Command "python run.py"
 
 Code
-simple_nn/models/run.py : main structure of training procedure
-simple_nn/models/loss.py : evaluate NNP energy using neural network and calculate loss function
-simple_nn/models/neural_network.py : initialize neural network and initial weights
+- simple_nn/models/run.py : main structure of training procedure
+- simple_nn/models/loss.py : evaluate NNP energy using neural network and calculate loss function
+- simple_nn/models/neural_network.py : initialize neural network and initial weights
